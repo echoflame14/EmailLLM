@@ -1,0 +1,37 @@
+{
+  "name": "email-assistant",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.33.1",
+    "@radix-ui/react-alert-dialog": "^1.1.4",
+    "@radix-ui/react-dialog": "^1.1.4",
+    "@tailwindcss/typography": "^0.5.16",
+    "@types/node": "^22.10.7",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "autoprefixer": "^10.4.20",
+    "iron-session": "^8.0.4",
+    "lucide-react": "^0.471.1",
+    "next": "^15.1.4",
+    "openai": "^4.78.1",
+    "postcss": "^8.5.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
+  },
+  "devDependencies": {
+    "@types/cookie": "^0.6.0"
+  }
+}
