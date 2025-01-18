@@ -2,7 +2,9 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { getIronSession } from 'iron-session';
 import { ConversationService } from '@/lib/agents/controller/conversationService';
 import Anthropic from '@anthropic-ai/sdk';
+
 import { SessionData } from '@/lib/auth/session';
+import { AuthSession } from '@/lib/auth/types'; // Add this import
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -49,9 +51,8 @@ async function handler(
   try {
     // Get the session
     const session = await getIronSession<SessionData>(req, res, sessionOptions);
-
     // Initialize conversation service with user's session
-    const conversationService = new ConversationService(session.auth || null);
+    const conversationService = new ConversationService(session.auth as AuthSession | null);
 
     // First, let Claude interpret the user's intent
     const claudeResponse = await anthropic.messages.create({

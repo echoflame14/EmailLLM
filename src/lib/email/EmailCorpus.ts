@@ -83,7 +83,7 @@ export class EmailCorpus {
     const messages = response.messages || [];
     
     await Promise.all(
-      messages.map(msg => this.addEmail(msg.id))
+      messages.map((msg: { id: string }) => this.addEmail(msg.id))
     );
     
     return messages.length;

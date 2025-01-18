@@ -1,20 +1,30 @@
 // src/lib/email/__tests__/EmailCorpus.test.ts
 
 import { EmailCorpus } from '../EmailCorpus';
-import { jest } from '@jest/globals';
 import { GmailClient } from '../../api/gmail';
+import { jest } from '@jest/globals';
 
 describe('EmailCorpus', () => {
   let corpus: EmailCorpus;
-  let accessToken: string;
+  let mockGmailClient: jest.Mocked<GmailClient>;
 
   beforeEach(() => {
-    accessToken = 'test-token';
-    corpus = new EmailCorpus(accessToken);
+    // Reset all mocks before each test
+    jest.clearAllMocks();
+    
+    // Create a mock GmailClient
+    mockGmailClient = {
+      getMessage: jest.fn(),
+      listMessages: jest.fn(),
+    } as unknown as jest.Mocked<GmailClient>;
+
+    corpus = new EmailCorpus('test-token');
+    // @ts-ignore - Replace the real client with our mock
+    corpus['client'] = mockGmailClient;
   });
 
   describe('addEmail', () => {
-    it('should process and index a single email correctly', async () => {
+    it('should correctly process a simple email', async () => {
       const mockMessage = {
         id: 'msg1',
         threadId: 'thread1',
@@ -36,15 +46,12 @@ describe('EmailCorpus', () => {
         labelIds: ['INBOX', 'UNREAD']
       };
 
-      // Mock the Gmail client
-      jest.spyOn(GmailClient.prototype, 'getMessage').mockResolvedValue(mockMessage);
+      mockGmailClient.getMessage.mockResolvedValue(mockMessage);
 
-      // Add the email
       await corpus.addEmail('msg1');
 
-      // Test the query functionality
+      // Test metadata extraction
       const results = corpus.query({ sender: 'john@example.com' });
-      
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
         id: 'msg1',
@@ -53,109 +60,242 @@ describe('EmailCorpus', () => {
           email: 'john@example.com',
           name: 'John Doe'
         },
-        subject: 'Test Email'
+        subject: 'Test Email',
+        labels: ['INBOX', 'UNREAD']
       });
 
-      // Test content retrieval
+      // Test content extraction
       const content = corpus.getContent('msg1');
+      expect(content).toBeDefined();
       expect(content?.body.plain).toBe('Hello World');
     });
-  });
 
-  describe('addEmailBatch', () => {
-    it('should process multiple emails correctly', async () => {
-      const mockMessages = {
-        messages: [
-          { id: 'msg1' },
-          { id: 'msg2' }
-        ]
-      };
-
-      // Mock the Gmail client
-      jest.spyOn(GmailClient.prototype, 'listMessages').mockResolvedValue(mockMessages);
-      jest.spyOn(GmailClient.prototype, 'getMessage').mockImplementation(async (id: string) => ({
-        id,
-        threadId: `thread_${id}`,
+    it('should handle emails with missing fields', async () => {
+      const mockMessage = {
+        id: 'msg2',
+        threadId: 'thread2',
         internalDate: '1634567890000',
         payload: {
           headers: [
-            { name: 'From', value: `Sender ${id} <sender${id}@example.com>` },
-            { name: 'Subject', value: `Test Email ${id}` }
+            { name: 'From', value: '<no-name@example.com>' },
+            // Missing To and Subject headers
           ],
-          parts: [
-            {
-              mimeType: 'text/plain',
-              body: { data: Buffer.from(`Content ${id}`).toString('base64') }
-            }
+          // No parts
+        },
+        // No snippet
+        labelIds: [] // Empty labels
+      };
+
+      mockGmailClient.getMessage.mockResolvedValue(mockMessage);
+
+      await corpus.addEmail('msg2');
+
+      const results = corpus.query({ sender: 'no-name@example.com' });
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        id: 'msg2',
+        sender: {
+          email: 'no-name@example.com',
+          name: undefined
+        },
+        subject: '',
+        recipients: [],
+        labels: []
+      });
+    });
+
+    it('should handle complex email addresses', async () => {
+      const mockMessage = {
+        id: 'msg3',
+        threadId: 'thread3',
+        internalDate: '1634567890000',
+        payload: {
+          headers: [
+            { name: 'From', value: '"Smith, John (Engineering)" <john.smith@company.example.com>' },
+            { name: 'To', value: 'Jane Doe <jane.doe@example.com>, Team <team@example.com>' },
+            { name: 'Cc', value: 'support@example.com, "Help Desk" <help@example.com>' }
           ]
         },
-        snippet: `Snippet ${id}`,
         labelIds: ['INBOX']
-      }));
+      };
 
-      // Add batch of emails
-      const count = await corpus.addEmailBatch('');
+      mockGmailClient.getMessage.mockResolvedValue(mockMessage);
 
-      expect(count).toBe(2);
+      await corpus.addEmail('msg3');
 
-      // Verify both emails were processed
-      const msg1 = corpus.query({ sender: 'sender1@example.com' });
-      const msg2 = corpus.query({ sender: 'sender2@example.com' });
-
-      expect(msg1).toHaveLength(1);
-      expect(msg2).toHaveLength(1);
+      const results = corpus.query({ sender: 'john.smith@company.example.com' });
+      expect(results).toHaveLength(1);
+      expect(results[0].sender).toEqual({
+        email: 'john.smith@company.example.com',
+        name: 'Smith, John (Engineering)'
+      });
+      expect(results[0].recipients).toHaveLength(4); // 2 To + 2 Cc
     });
   });
 
   describe('query', () => {
-    it('should support multiple query criteria', async () => {
-      // Add test emails with various criteria
+    beforeEach(async () => {
+      // Set up some test data
+      const mockMessages = [
+        {
+          id: 'msg1',
+          threadId: 'thread1',
+          internalDate: '1634567890000', // older
+          payload: {
+            headers: [
+              { name: 'From', value: 'sender1@example.com' },
+              { name: 'Subject', value: 'Test 1' }
+            ]
+          },
+          labelIds: ['INBOX', 'IMPORTANT']
+        },
+        {
+          id: 'msg2',
+          threadId: 'thread1',
+          internalDate: '1734567890000', // newer
+          payload: {
+            headers: [
+              { name: 'From', value: 'sender1@example.com' },
+              { name: 'Subject', value: 'Test 2' }
+            ]
+          },
+          labelIds: ['INBOX']
+        },
+        {
+          id: 'msg3',
+          threadId: 'thread2',
+          internalDate: '1734567890000', // newer
+          payload: {
+            headers: [
+              { name: 'From', value: 'sender2@example.com' },
+              { name: 'Subject', value: 'Test 3' }
+            ]
+          },
+          labelIds: ['INBOX', 'IMPORTANT']
+        }
+      ];
+
+      mockGmailClient.listMessages.mockResolvedValue({ messages: mockMessages });
+      mockGmailClient.getMessage.mockImplementation(async (id) => 
+        mockMessages.find(msg => msg.id === id)!
+      );
+
+      await corpus.addEmailBatch('', 10);
+    });
+
+    it('should filter by sender', () => {
+      const results = corpus.query({ sender: 'sender1@example.com' });
+      expect(results).toHaveLength(2);
+      expect(results.every(msg => msg.sender.email === 'sender1@example.com')).toBe(true);
+    });
+
+    it('should filter by label', () => {
+      const results = corpus.query({ label: 'IMPORTANT' });
+      expect(results).toHaveLength(2);
+      expect(results.every(msg => msg.labels.includes('IMPORTANT'))).toBe(true);
+    });
+
+    it('should filter by thread', () => {
+      const results = corpus.query({ threadId: 'thread1' });
+      expect(results).toHaveLength(2);
+      expect(results.every(msg => msg.threadId === 'thread1')).toBe(true);
+    });
+
+    it('should filter by date range', () => {
+      const results = corpus.query({
+        dateRange: {
+          start: 1700000000000,
+          end: 1800000000000
+        }
+      });
+      expect(results).toHaveLength(2); // Only the newer messages
+      expect(results.every(msg => msg.timestamp >= 1700000000000)).toBe(true);
+    });
+
+    it('should combine multiple filters', () => {
+      const results = corpus.query({
+        sender: 'sender1@example.com',
+        label: 'IMPORTANT',
+        dateRange: {
+          start: 1600000000000,
+          end: 1700000000000
+        }
+      });
+      expect(results).toHaveLength(1); // Only msg1 matches all criteria
+      expect(results[0].id).toBe('msg1');
+    });
+
+    it('should sort results by timestamp descending', () => {
+      const results = corpus.query({}); // Get all messages
+      expect(results).toHaveLength(3);
+      expect(results[0].timestamp).toBeGreaterThan(results[2].timestamp);
+    });
+  });
+
+  describe('addEmailBatch', () => {
+    it('should handle empty response', async () => {
+      mockGmailClient.listMessages.mockResolvedValue({});
+      const count = await corpus.addEmailBatch('');
+      expect(count).toBe(0);
+    });
+
+    it('should process multiple emails in parallel', async () => {
       const mockMessages = {
         messages: [
-          { id: 'msg1' }, // Recent email from sender1
-          { id: 'msg2' }, // Older email from sender1
-          { id: 'msg3' }  // Recent email from sender2
+          { id: 'msg1' },
+          { id: 'msg2' },
+          { id: 'msg3' }
         ]
       };
 
-      jest.spyOn(GmailClient.prototype, 'listMessages').mockResolvedValue(mockMessages);
-      jest.spyOn(GmailClient.prototype, 'getMessage').mockImplementation(async (id) => ({
+      mockGmailClient.listMessages.mockResolvedValue(mockMessages);
+      mockGmailClient.getMessage.mockImplementation(async (id) => ({
         id,
         threadId: 'thread1',
-        internalDate: id === 'msg2' ? '1634567890000' : '1734567890000',
+        internalDate: '1634567890000',
         payload: {
           headers: [
-            { 
-              name: 'From', 
-              value: id === 'msg3' ? 'sender2@example.com' : 'sender1@example.com' 
-            },
-            { name: 'Subject', value: 'Test Email' }
+            { name: 'From', value: `sender@example.com` },
+            { name: 'Subject', value: `Test ${id}` }
           ]
         },
-        snippet: 'Snippet',
         labelIds: ['INBOX']
       }));
 
-      await corpus.addEmailBatch('');
+      const count = await corpus.addEmailBatch('');
+      expect(count).toBe(3);
+      expect(mockGmailClient.getMessage).toHaveBeenCalledTimes(3);
 
-      // Test date range query
-      const recentEmails = corpus.query({
-        dateRange: {
-          start: 1700000000000,
-          end: 1800000000000
-        }
-      });
-      expect(recentEmails).toHaveLength(2);
+      // Verify all messages were processed
+      const results = corpus.query({});
+      expect(results).toHaveLength(3);
+    });
 
-      // Test combined sender + date query
-      const recentFromSender1 = corpus.query({
-        sender: 'sender1@example.com',
-        dateRange: {
-          start: 1700000000000,
-          end: 1800000000000
-        }
+    it('should respect maxResults parameter', async () => {
+      const mockMessages = Array(150).fill(null).map((_, i) => ({
+        id: `msg${i}`,
+        threadId: `thread${i}`,
+        internalDate: '1634567890000',
+        payload: {
+          headers: [
+            { name: 'From', value: 'test@example.com' },
+            { name: 'Subject', value: `Test ${i}` }
+          ]
+        },
+        labelIds: ['INBOX']
+      }));
+
+      mockGmailClient.listMessages.mockResolvedValue({
+        messages: mockMessages.slice(0, 50) // Only return first 50 messages
       });
-      expect(recentFromSender1).toHaveLength(1);
+      
+      // Mock getMessage to return the corresponding mock message
+      mockGmailClient.getMessage.mockImplementation(async (id) => 
+        mockMessages.find(msg => msg.id === id)
+      );
+
+      const count = await corpus.addEmailBatch('', 50);
+      expect(mockGmailClient.listMessages).toHaveBeenCalledWith('', 50);
     });
   });
 });
