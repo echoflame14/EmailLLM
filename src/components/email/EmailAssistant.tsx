@@ -3,6 +3,9 @@ import { useAuth } from '@/lib/auth/hooks';
 import { AuthStatus } from '../auth/AuthStatus';
 import { Inbox, Settings, Mail, AlertCircle } from 'lucide-react';
 import ConversationController from '../conversation/ConversationController';
+import { EmailGroupList } from './EmailGroupList';
+import { SimpleEmailManager } from '@/lib/api/SimpleEmailManager';
+import { GmailClient } from '@/lib/api/gmail';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -106,10 +109,11 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     </footer>
   </div>
 );
-
 export const EmailAssistant: React.FC = () => {
-  const { session, isLoading, error } = useAuth();
+  const { session, isLoading, error: authError } = useAuth();
   const [isPageLoading, setIsPageLoading] = useState(true);
+  const [emailManager, setEmailManager] = useState<SimpleEmailManager | null>(null);
+  const [managerError, setManagerError] = useState<Error | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -117,6 +121,29 @@ export const EmailAssistant: React.FC = () => {
     }, 1000);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    console.log('Session state:', session);
+    if (session?.tokens?.access_token) {
+      try {
+        console.log('Initializing with token:', session.tokens.access_token.substring(0, 10) + '...');
+        const manager = new SimpleEmailManager(session.tokens.access_token);
+        setEmailManager(manager);
+        setManagerError(null);
+        console.log('Email manager initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize email manager:', error);
+        setManagerError(error instanceof Error ? error : new Error('Failed to initialize email manager'));
+      }
+    } else {
+      console.log('Session or tokens missing:', {
+        hasSession: !!session,
+        hasTokens: !!session?.tokens,
+        hasAccessToken: !!session?.tokens?.access_token
+      });
+    }
+  }, [session]);
+
 
   if (isPageLoading || isLoading) {
     return (
@@ -126,13 +153,13 @@ export const EmailAssistant: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (authError) {
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[50vh]">
           <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Authentication Error</h2>
-          <p className="text-gray-600 mb-4">{error.message}</p>
+          <p className="text-gray-600 mb-4">{authError.message}</p>
           <button
             onClick={() => window.location.reload()}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -160,53 +187,53 @@ export const EmailAssistant: React.FC = () => {
             Welcome back, {session.user.name || session.user.email}!
           </h2>
           <p className="text-gray-600 mt-2">
-            Your inbox is being analyzed. We'll have insights ready for you soon.
+            Manage your emails by sender below.
           </p>
         </div>
-        
-        {/* Feature Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <Inbox className="w-8 h-8 text-blue-600 mb-3" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Inbox Analysis</h3>
-            <p className="text-gray-600">
-              Analyzing your email patterns and organizing your inbox intelligently.
-            </p>
+
+        {managerError && (
+          <div className="mb-8 p-4 bg-red-50 rounded-lg">
+            <p className="text-red-600">{managerError.message}</p>
           </div>
-          
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <Settings className="w-8 h-8 text-blue-600 mb-3" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Preferences</h3>
-            <p className="text-gray-600">
-              Configure your email assistant preferences and settings.
-            </p>
-          </div>
-          
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <Mail className="w-8 h-8 text-blue-600 mb-3" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Smart Labels</h3>
-            <p className="text-gray-600">
-              Creating and managing intelligent email labels.
-            </p>
-          </div>
+        )}
+
+        {/* Email Management Section */}
+        <div className="mb-8">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">
+            Email Groups
+          </h3>
+          {emailManager && <EmailGroupList emailManager={emailManager} />}
         </div>
 
         {/* Chat Section */}
-        <div className="mb-8">
+        <div className="mt-8 border-t pt-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">
             Chat with Your Email Assistant
           </h3>
-          <ConversationController />
+          {emailManager ? (
+            <ConversationController emailManager={emailManager} />
+          ) : (
+            <div className="text-center py-4 text-gray-500">
+              Loading email manager...
+            </div>
+          )}
         </div>
-        
         {/* Status Section */}
         <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-          <h3 className="text-lg font-medium text-blue-900 mb-2">Current Status</h3>
-          <div className="flex items-center">
-            <div className="w-2 h-2 bg-blue-600 rounded-full mr-2" />
-            <p className="text-blue-800">
-              Setting up your personalized email assistant...
-            </p>
+          <h3 className="text-lg font-medium text-blue-900 mb-2">Quick Tips</h3>
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <div className="w-2 h-2 bg-blue-600 rounded-full mr-2" />
+              <p className="text-blue-800">
+                Use "show emails" to view recent messages
+              </p>
+            </div>
+            <div className="flex items-center">
+              <div className="w-2 h-2 bg-blue-600 rounded-full mr-2" />
+              <p className="text-blue-800">
+                Type "help" to see all available commands
+              </p>
+            </div>
           </div>
         </div>
       </div>

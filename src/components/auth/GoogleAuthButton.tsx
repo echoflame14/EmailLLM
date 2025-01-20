@@ -1,17 +1,14 @@
 // src/components/auth/GoogleAuthButton.tsx
-
 import React from 'react';
-import { getGoogleAuthUrl } from '@/lib/config/auth';
 
 export const GoogleAuthButton = () => {
-  const handleLogin = () => {
+  const handleLogin = async () => {
     try {
-      const authUrl = getGoogleAuthUrl();
-      console.log('Auth URL:', authUrl); // Debug log
-      window.location.href = authUrl;
+      // Redirect to our API route, which will then redirect to Google
+      window.location.href = '/api/auth/google';
     } catch (error) {
-      console.error('Error generating auth URL:', error);
-      alert('Failed to initialize Google login. Please check the console for details.');
+      console.error('Error initiating login:', error);
+      alert('Failed to initialize Google login. Please try again.');
     }
   };
 

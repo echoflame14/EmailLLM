@@ -1,3 +1,4 @@
+// src/lib/auth/hooks.ts
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import type { AuthSession } from './types';
@@ -30,13 +31,19 @@ export function useAuth(): UseAuth {
           'Pragma': 'no-cache',
         },
       });
+
+      console.log('Session response status:', response.status);
       
       if (!response.ok) {
         throw new Error('Failed to fetch session');
       }
       
       const data = await response.json();
-      console.log('Session response:', data);
+      console.log('Session response data:', {
+        hasSession: !!data.session,
+        hasToken: !!data.session?.tokens?.access_token,
+        email: data.session?.user?.email
+      });
       
       setState(prev => {
         // Only update if the session has actually changed
@@ -82,7 +89,6 @@ export function useAuth(): UseAuth {
     return () => clearInterval(interval);
   }, [fetchSession]);
 
-  // Logout function
   const logout = async () => {
     try {
       console.log('Logging out...');
@@ -102,7 +108,6 @@ export function useAuth(): UseAuth {
     }
   };
 
-  // Token refresh function
   const refreshToken = async () => {
     if (!state.session?.tokens.refresh_token) {
       console.log('No refresh token available');
@@ -113,32 +118,41 @@ export function useAuth(): UseAuth {
       console.log('Refreshing token...');
       const response = await fetch('/api/auth/refresh', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          refreshToken: state.session.tokens.refresh_token 
-        }),
+        headers: { 'Content-Type': 'application/json' }
       });
 
       if (!response.ok) {
-        throw new Error('Token refresh failed');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Token refresh failed');
       }
       
       const data = await response.json();
-      console.log('Token refreshed successfully');
+      console.log('Token refresh response:', {
+        success: data.success,
+        hasNewToken: !!data.tokens?.access_token
+      });
       
-      setState(prev => ({
-        ...prev,
-        session: prev.session ? {
-          ...prev.session,
-          tokens: data.tokens,
-        } : null,
-      }));
+      if (!data.success) {
+        throw new Error('Token refresh response indicated failure');
+      }
+
+      await fetchSession();
     } catch (error) {
       console.error('Token refresh error:', error);
       setState(prev => ({ ...prev, error: error as Error }));
-      logout();
+      await logout();
     }
   };
+
+  // Log state changes
+  useEffect(() => {
+    console.log('Auth state updated:', {
+      hasSession: !!state.session,
+      hasToken: !!state.session?.tokens?.access_token,
+      isLoading: state.isLoading,
+      error: state.error?.message
+    });
+  }, [state]);
 
   return {
     ...state,

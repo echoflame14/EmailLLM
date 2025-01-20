@@ -1,97 +1,134 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { getIronSession } from 'iron-session';
-import { ConversationService } from '@/lib/agents/controller/conversationService';
 import Anthropic from '@anthropic-ai/sdk';
+import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
+import { getIronSession } from 'iron-session';
+import { SessionData, sessionOptions } from '@/lib/auth/session';
+import { emailTools, systemPrompt } from './tools/emailTools';
 
-import { SessionData } from '@/lib/auth/session';
-import { AuthSession } from '@/lib/auth/types'; // Add this import
+if (!process.env.ANTHROPIC_API_KEY) {
+  throw new Error('ANTHROPIC_API_KEY is not set');
+}
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// System prompt teaching Claude about the available email operations
-const EMAIL_SYSTEM_PROMPT = `You are an email management assistant with access to the following operations:
-
-1. analyzePatternsHandler: Analyze email patterns to identify frequent senders and categories
-2. createLabelHandler: Create a new label or get an existing one
-3. applyLabelsHandler: Apply labels to emails matching a search query
-4. getMetadataHandler: Get metadata for a specific email
-
-When users ask about email organization, you should:
-1. First analyze their patterns using analyzePatternsHandler
-2. Make suggestions based on the patterns you find
-3. Create labels and organize emails only with user confirmation
-4. Always explain what you're doing and why
-
-Keep responses clear and concise. Always get user confirmation before making changes.`;
-
-const sessionOptions = {
-  cookieName: "email-assistant-session",
-  password: process.env.SECRET_COOKIE_PASSWORD!,
-  cookieOptions: {
-    secure: process.env.NODE_ENV === "production",
-  },
-};
-
-async function handler(
+export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  console.log('=== Starting request handler ===');
+  console.log('Request method:', req.method);
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
-  const { message } = req.body;
-
-  if (!message) {
-    return res.status(400).json({ message: 'Message is required' });
-  }
-
   try {
-    // Get the session
     const session = await getIronSession<SessionData>(req, res, sessionOptions);
-    // Initialize conversation service with user's session
-    const conversationService = new ConversationService(session.auth as AuthSession | null);
+    if (!session?.auth?.tokens?.access_token) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
 
-    // First, let Claude interpret the user's intent
+    let { messages } = req.body;
+    const { toolResult } = req.body;
+
+    if (toolResult) {
+      console.log('=== Processing Tool Result ===');
+      console.log('Tool Result:', JSON.stringify(toolResult, null, 2));
+
+      // Create tool result content block
+      const toolResultBlock = {
+        type: 'tool_result' as const,
+        tool_call_id: toolResult.id,
+        content: toolResult.content || JSON.stringify(toolResult)
+      };
+
+      // Add tool result as content block in new user message
+      messages.push({
+        role: 'user',
+        content: [toolResultBlock]
+      });
+      
+      // Add tool result as a new user message
+      const toolResultMessage: MessageParam = {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `Tool result received: ${toolResult.content || JSON.stringify(toolResult)}`,
+          },
+        ],
+      };
+
+      messages.push(toolResultMessage);
+
+      console.log('=== Processed Messages ===');
+      console.log('Messages after processing:', JSON.stringify(messages, null, 2));
+    }
+
+    console.log('=== Sending Messages to Claude ===');
+    console.log('Messages:', JSON.stringify(messages, null, 2));
+
     const claudeResponse = await anthropic.messages.create({
       model: 'claude-3-sonnet-20240229',
       max_tokens: 1024,
-      system: EMAIL_SYSTEM_PROMPT,
-      messages: [{
-        role: 'user',
-        content: message
-      }]
+      system: systemPrompt,
+      messages,
+      tools: emailTools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        input_schema: {
+          type: 'object',
+          properties: tool.parameters.properties,
+          required: tool.parameters.required,
+        },
+      })),
+      tool_choice: { type: 'auto' },
     });
 
-    // Get Claude's response
-    const claudeContent = claudeResponse.content[0];
-    let claudeMessage = '';
-    
-    if ('text' in claudeContent) {
-      claudeMessage = claudeContent.text;
-    } else {
-      // Handle other content types if needed
-      claudeMessage = 'Unable to process response format';
+    if (claudeResponse.stop_reason === 'tool_use') {
+      const toolUseBlock = claudeResponse.content.find(
+        (block) => block.type === 'tool_use'
+      );
+
+      if (toolUseBlock) {
+        console.log('=== Tool Use Detected ===');
+        const textBlock = claudeResponse.content.find(
+          (block) => block.type === 'text'
+        );
+
+        return res.status(200).json({
+          response: textBlock?.type === 'text' ? textBlock.text : '',
+          toolCall: {
+            id: toolUseBlock.id,
+            name: toolUseBlock.name,
+            parameters: toolUseBlock.input,
+          },
+          needsTool: true,
+        });
+      }
     }
 
-    // Process the message through our conversation service
-    const operationResult = await conversationService.handleUserMessage(message);
+    const textBlock = claudeResponse.content.find((block) => block.type === 'text');
+    if (textBlock) {
+      return res.status(200).json({
+        response: textBlock.text,
+        needsTool: false,
+      });
+    }
 
-    // Send both the LLM's interpretation and the operation result
-    res.status(200).json({ 
-      response: `${claudeMessage}\n\n${operationResult}`,
-      operation: operationResult
+    return res.status(200).json({
+      response: 'No response received',
+      needsTool: false,
     });
-
   } catch (error) {
-    console.error('Error in chat endpoint:', error);
-    res.status(500).json({ 
+    console.error('=== Error in chat endpoint ===');
+    console.error('Error details:', error);
+    return res.status(500).json({
       message: 'Error processing request',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 }
-
-export default handler;
