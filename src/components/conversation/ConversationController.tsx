@@ -1,7 +1,9 @@
+// File: analyze/emailLLM/email-assistant/src/components/conversation/ConversationController.tsx
 import React, { useState } from 'react';
 import { useAuth } from '@/lib/auth/hooks';
 import { executeEmailTool, ToolCall } from '@/lib/api/toolHandler';
 import { SimpleEmailManager } from '@/lib/api/SimpleEmailManager';
+import { EmailSummaries } from '../email/EmailSummaries'; // Import the EmailSummaries component
 
 interface ContentBlock {
   type: string;
@@ -39,7 +41,7 @@ interface ConversationControllerProps {
 }
 
 const ConversationController: React.FC<ConversationControllerProps> = ({ emailManager }) => {
- const { refreshToken } = useAuth();
+  const { refreshToken } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -203,7 +205,6 @@ const ConversationController: React.FC<ConversationControllerProps> = ({ emailMa
     }
   };
 
-
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -241,6 +242,23 @@ const ConversationController: React.FC<ConversationControllerProps> = ({ emailMa
                     return <div key={blockIndex}>{block.text}</div>;
                   }
                   if (block.type === 'tool_result' && block.content) {
+                    // Attempt to parse the tool_result content as JSON
+                    let parsedEmails = null;
+                    try {
+                      parsedEmails = JSON.parse(block.content);
+                    } catch (e) {
+                      console.error("Error parsing tool_result JSON:", e);
+                    }
+                    if (
+                      parsedEmails &&
+                      Array.isArray(parsedEmails) &&
+                      parsedEmails.length > 0 &&
+                      parsedEmails[0].id
+                    ) {
+                      // Render the EmailSummaries component if the JSON structure matches expected emails
+                      return <EmailSummaries emails={parsedEmails} key={blockIndex} />;
+                    }
+                    // Fallback to displaying raw content if not valid JSON
                     return <div key={blockIndex}>{block.content}</div>;
                   }
                   return null;
@@ -276,5 +294,6 @@ const ConversationController: React.FC<ConversationControllerProps> = ({ emailMa
       </div>
     </div>
   );
-}
+};
+
 export default ConversationController;

@@ -3,7 +3,6 @@ import { useAuth } from '@/lib/auth/hooks';
 import { AuthStatus } from '../auth/AuthStatus';
 import { Inbox, Settings, Mail, AlertCircle } from 'lucide-react';
 import ConversationController from '../conversation/ConversationController';
-import { EmailGroupList } from './EmailGroupList';
 import { SimpleEmailManager } from '@/lib/api/SimpleEmailManager';
 import { GmailClient } from '@/lib/api/gmail';
 
@@ -51,8 +50,10 @@ const LoadingSpinner: React.FC = () => (
   <div className="flex flex-col items-center justify-center min-h-[50vh]">
     <div className="relative">
       <div className="w-12 h-12 border-4 border-blue-200 rounded-full animate-spin">
-        <div className="absolute top-0 left-0 w-12 h-12 border-4 border-blue-600 rounded-full animate-spin" 
-             style={{ animationDirection: 'reverse', borderRightColor: 'transparent', borderLeftColor: 'transparent' }} />
+        <div
+          className="absolute top-0 left-0 w-12 h-12 border-4 border-blue-600 rounded-full animate-spin"
+          style={{ animationDirection: 'reverse', borderRightColor: 'transparent', borderLeftColor: 'transparent' }}
+        />
       </div>
     </div>
     <p className="mt-4 text-gray-600">Loading your email assistant...</p>
@@ -61,17 +62,15 @@ const LoadingSpinner: React.FC = () => (
 
 const WelcomeScreen: React.FC = () => (
   <div className="text-center max-w-2xl mx-auto">
-    <h2 className="text-3xl font-bold text-gray-900 mb-6">
-      Welcome to Email Assistant
-    </h2>
+    <h2 className="text-3xl font-bold text-gray-900 mb-6">Welcome to Email Assistant</h2>
     <p className="text-lg text-gray-600 mb-8">
       Your intelligent email management companion. Sign in with Google to:
     </p>
     <ul className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
       {[
-        { icon: Mail, text: "Organize your inbox intelligently" },
-        { icon: Inbox, text: "Manage email patterns effortlessly" },
-        { icon: Settings, text: "Customize your email experience" }
+        { icon: Mail, text: 'Organize your inbox intelligently' },
+        { icon: Inbox, text: 'Manage email patterns effortlessly' },
+        { icon: Settings, text: 'Customize your email experience' }
       ].map(({ icon: Icon, text }, index) => (
         <li key={index} className="flex items-center p-4 bg-white rounded-lg shadow-sm">
           <Icon className="w-6 h-6 text-blue-600 mr-3 flex-shrink-0" />
@@ -96,9 +95,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       </div>
     </header>
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <ErrorBoundary>
-        {children}
-      </ErrorBoundary>
+      <ErrorBoundary>{children}</ErrorBoundary>
     </main>
     <footer className="bg-white border-t mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -109,6 +106,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     </footer>
   </div>
 );
+
 export const EmailAssistant: React.FC = () => {
   const { session, isLoading, error: authError } = useAuth();
   const [isPageLoading, setIsPageLoading] = useState(true);
@@ -143,7 +141,6 @@ export const EmailAssistant: React.FC = () => {
       });
     }
   }, [session]);
-
 
   if (isPageLoading || isLoading) {
     return (
@@ -186,9 +183,7 @@ export const EmailAssistant: React.FC = () => {
           <h2 className="text-2xl font-semibold text-gray-900">
             Welcome back, {session.user.name || session.user.email}!
           </h2>
-          <p className="text-gray-600 mt-2">
-            Manage your emails by sender below.
-          </p>
+          <p className="text-gray-600 mt-2">Use the chat below to interact with your Email Assistant.</p>
         </div>
 
         {managerError && (
@@ -197,42 +192,23 @@ export const EmailAssistant: React.FC = () => {
           </div>
         )}
 
-        {/* Email Management Section */}
-        <div className="mb-8">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
-            Email Groups
-          </h3>
-          {emailManager && <EmailGroupList emailManager={emailManager} />}
-        </div>
-
         {/* Chat Section */}
         <div className="mt-8 border-t pt-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
-            Chat with Your Email Assistant
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Chat with Your Email Assistant</h3>
           {emailManager ? (
             <ConversationController emailManager={emailManager} />
           ) : (
-            <div className="text-center py-4 text-gray-500">
-              Loading email manager...
-            </div>
+            <div className="text-center py-4 text-gray-500">Loading email manager...</div>
           )}
         </div>
-        {/* Status Section */}
+
+        {/* Quick Tips Section */}
         <div className="mt-8 p-4 bg-blue-50 rounded-lg">
           <h3 className="text-lg font-medium text-blue-900 mb-2">Quick Tips</h3>
           <div className="space-y-2">
             <div className="flex items-center">
               <div className="w-2 h-2 bg-blue-600 rounded-full mr-2" />
-              <p className="text-blue-800">
-                Use "show emails" to view recent messages
-              </p>
-            </div>
-            <div className="flex items-center">
-              <div className="w-2 h-2 bg-blue-600 rounded-full mr-2" />
-              <p className="text-blue-800">
-                Type "help" to see all available commands
-              </p>
+              <p className="text-blue-800">Type "help" to see all available commands</p>
             </div>
           </div>
         </div>
